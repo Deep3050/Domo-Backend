@@ -445,6 +445,56 @@ app.get("/domo/embed-token/:cardId", async (req, res) => {
   }
 });
 
+
+
+// ✅ Simple user data storage (in production, use database)
+let currentUserData = {
+  userId: "123",
+  userName: "Deepak Yadav",
+  lastUpdated: Date.now()
+};
+
+// ✅ Store current user data
+app.post("/api/user-data", (req, res) => {
+  try {
+    const { userId, userName } = req.body;
+    
+    currentUserData = {
+      userId: userId || "123",
+      userName: userName || "Deepak Yadav",
+      lastUpdated: Date.now()
+    };
+
+    console.log('💾 User data stored:', currentUserData);
+    
+    res.json({ 
+      success: true, 
+      message: "User data stored successfully",
+      data: currentUserData
+    });
+  } catch (error) {
+    console.error('❌ Error storing user data:', error);
+    res.status(500).json({ 
+      error: "Failed to store user data",
+      details: error.message 
+    });
+  }
+});
+
+// ✅ Get current user data
+app.get("/api/user-data", (req, res) => {
+  try {
+    console.log('📥 User data retrieved:', currentUserData);
+    res.json(currentUserData);
+  } catch (error) {
+    console.error('❌ Error retrieving user data:', error);
+    res.status(500).json({ 
+      error: "Failed to retrieve user data",
+      details: error.message 
+    });
+  }
+});
+
 /** 🔹 Health Check */
 app.get("/", (req, res) => res.send("✅ Domo Node App is running"));
 
