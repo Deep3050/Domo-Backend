@@ -18,6 +18,88 @@ const {
 
 let domoAccessToken = "";
 
+// ✅ MULTI-USER DATA STORAGE
+const userDataStore = {
+  default: {
+    userId: "123",
+    userName: "Deepak Yadav",
+    lastUpdated: Date.now()
+  }
+};
+
+// ✅ Clean up old user data (older than 1 hour)
+setInterval(() => {
+  const now = Date.now();
+  const oneHourAgo = now - (60 * 60 * 1000);
+  
+  Object.keys(userDataStore).forEach(clientId => {
+    if (clientId !== 'default' && userDataStore[clientId].lastUpdated < oneHourAgo) {
+      delete userDataStore[clientId];
+      console.log(`🧹 Cleaned up old user data for: ${clientId}`);
+    }
+  });
+}, 30 * 60 * 1000); // Run every 30 minutes
+
+// ✅ Store current user data (supports multiple users)
+app.post("/api/user-data", (req, res) => {
+  try {
+    const { userId, userName, clientId = 'default' } = req.body;
+    
+    userDataStore[clientId] = {
+      userId: userId || "123",
+      userName: userName || "Deepak Yadav",
+      lastUpdated: Date.now()
+    };
+
+    console.log('💾 User data stored for client:', clientId, userDataStore[clientId]);
+    
+    res.json({ 
+      success: true, 
+      message: "User data stored successfully",
+      data: userDataStore[clientId]
+    });
+  } catch (error) {
+    console.error('❌ Error storing user data:', error);
+    res.status(500).json({ 
+      error: "Failed to store user data",
+      details: error.message 
+    });
+  }
+});
+
+// ✅ Get current user data (supports multiple users)
+app.get("/api/user-data", (req, res) => {
+  try {
+    const clientId = req.query.clientId || 'default';
+    const userData = userDataStore[clientId] || userDataStore.default;
+    
+    console.log('📥 User data retrieved for client:', clientId, userData);
+    res.json(userData);
+  } catch (error) {
+    console.error('❌ Error retrieving user data:', error);
+    res.status(500).json({ 
+      error: "Failed to retrieve user data",
+      details: error.message 
+    });
+  }
+});
+
+// ✅ Get all stored user data (for debugging)
+app.get("/api/all-user-data", (req, res) => {
+  try {
+    res.json({
+      totalClients: Object.keys(userDataStore).length,
+      data: userDataStore
+    });
+  } catch (error) {
+    console.error('❌ Error retrieving all user data:', error);
+    res.status(500).json({ 
+      error: "Failed to retrieve user data",
+      details: error.message 
+    });
+  }
+});
+
 // ✅ User Sessions Storage (in production, use Redis or database)
 const userSessions = new Map();
 
@@ -445,62 +527,13 @@ app.get("/domo/embed-token/:cardId", async (req, res) => {
   }
 });
 
-
-
-// ✅ Simple user data storage (in production, use database)
-let currentUserData = {
-  userId: "123",
-  userName: "Deepak Yadav",
-  lastUpdated: Date.now()
-};
-
-// ✅ Store current user data
-app.post("/api/user-data", (req, res) => {
-  try {
-    const { userId, userName } = req.body;
-    
-    currentUserData = {
-      userId: userId || "123",
-      userName: userName || "Deepak Yadav",
-      lastUpdated: Date.now()
-    };
-
-    console.log('💾 User data stored:', currentUserData);
-    
-    res.json({ 
-      success: true, 
-      message: "User data stored successfully",
-      data: currentUserData
-    });
-  } catch (error) {
-    console.error('❌ Error storing user data:', error);
-    res.status(500).json({ 
-      error: "Failed to store user data",
-      details: error.message 
-    });
-  }
-});
-
-// ✅ Get current user data
-app.get("/api/user-data", (req, res) => {
-  try {
-    console.log('📥 User data retrieved:', currentUserData);
-    res.json(currentUserData);
-  } catch (error) {
-    console.error('❌ Error retrieving user data:', error);
-    res.status(500).json({ 
-      error: "Failed to retrieve user data",
-      details: error.message 
-    });
-  }
-});
-
 /** 🔹 Health Check */
 app.get("/", (req, res) => res.send("✅ Domo Node App is running"));
 
 /** 🔹 Start Server */
 app.listen(PORT, async () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(`👤 Multi-user endpoints available at /api/user-data`);
   console.log(`📝 User session endpoints available at /api/user-session`);
   await getDomoAccessToken();
 });
