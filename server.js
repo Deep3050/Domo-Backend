@@ -12,12 +12,180 @@ const {
   DOMO_CLIENT_ID,
   DOMO_CLIENT_SECRET,
   DOMO_API_BASE = "https://api.domo.com",
-  DOMO_INSTANCE = "https://lionbridge.domo.com", // ✅ Add your instance base here
+  DOMO_INSTANCE = "https://lionbridge.domo.com",
   PORT = 4000,
 } = process.env;
 
 let domoAccessToken = "";
 
+// ✅ User Sessions Storage (in production, use Redis or database)
+const userSessions = new Map();
+
+// ✅ Clean up expired sessions every hour
+setInterval(() => {
+  const now = Date.now();
+  const oneHourAgo = now - (60 * 60 * 1000);
+  
+  for (const [sessionId, sessionData] of userSessions.entries()) {
+    if (sessionData.timestamp < oneHourAgo) {
+      userSessions.delete(sessionId);
+      console.log(`🧹 Cleaned up expired session: ${sessionId}`);
+    }
+  }
+}, 60 * 60 * 1000);
+
+// ✅ Store user data in session
+app.post("/api/user-session", (req, res) => {
+  try {
+    const { sessionId, userId, userName } = req.body;
+    
+    if (!sessionId) {
+      return res.status(400).json({ error: "sessionId is required" });
+    }
+
+    const sessionData = {
+      userId: userId || "123",
+      userName: userName || "Deepak Yadav",
+      timestamp: Date.now()
+    };
+
+    userSessions.set(sessionId, sessionData);
+    
+    console.log('💾 User session stored:', { sessionId, ...sessionData });
+    
+    res.json({ 
+      success: true, 
+      sessionId,
+      message: "User data stored successfully" 
+    });
+  } catch (error) {
+    console.error('❌ Error storing user session:', error);
+    res.status(500).json({ 
+      error: "Failed to store user session",
+      details: error.message 
+    });
+  }
+});
+
+// ✅ Get user data from session
+app.get("/api/user-session/:sessionId", (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    
+    if (!sessionId) {
+      return res.status(400).json({ error: "sessionId is required" });
+    }
+
+    const sessionData = userSessions.get(sessionId);
+    
+    if (sessionData) {
+      console.log('📥 User session retrieved:', { sessionId, ...sessionData });
+      res.json(sessionData);
+    } else {
+      console.log('❌ Session not found:', sessionId);
+      res.status(404).json({ 
+        error: "Session not found",
+        message: "Session expired or does not exist" 
+      });
+    }
+  } catch (error) {
+    console.error('❌ Error retrieving user session:', error);
+    res.status(500).json({ 
+      error: "Failed to retrieve user session",
+      details: error.message 
+    });
+  }
+});
+
+// ✅ Update user session (alternative to POST)
+app.put("/api/user-session/:sessionId", (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { userId, userName } = req.body;
+    
+    if (!sessionId) {
+      return res.status(400).json({ error: "sessionId is required" });
+    }
+
+    const sessionData = {
+      userId: userId || "123",
+      userName: userName || "Deepak Yadav",
+      timestamp: Date.now()
+    };
+
+    userSessions.set(sessionId, sessionData);
+    
+    console.log('🔄 User session updated:', { sessionId, ...sessionData });
+    
+    res.json({ 
+      success: true, 
+      sessionId,
+      message: "User data updated successfully" 
+    });
+  } catch (error) {
+    console.error('❌ Error updating user session:', error);
+    res.status(500).json({ 
+      error: "Failed to update user session",
+      details: error.message 
+    });
+  }
+});
+
+// ✅ Delete user session
+app.delete("/api/user-session/:sessionId", (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    
+    if (!sessionId) {
+      return res.status(400).json({ error: "sessionId is required" });
+    }
+
+    const deleted = userSessions.delete(sessionId);
+    
+    if (deleted) {
+      console.log('🗑️ User session deleted:', sessionId);
+      res.json({ 
+        success: true, 
+        message: "Session deleted successfully" 
+      });
+    } else {
+      res.status(404).json({ 
+        error: "Session not found",
+        message: "Session already expired or does not exist" 
+      });
+    }
+  } catch (error) {
+    console.error('❌ Error deleting user session:', error);
+    res.status(500).json({ 
+      error: "Failed to delete user session",
+      details: error.message 
+    });
+  }
+});
+
+// ✅ Get all active sessions (for debugging)
+app.get("/api/user-sessions", (req, res) => {
+  try {
+    const sessions = Array.from(userSessions.entries()).map(([sessionId, data]) => ({
+      sessionId,
+      ...data,
+      age: Date.now() - data.timestamp
+    }));
+    
+    res.json({
+      total: sessions.length,
+      sessions
+    });
+  } catch (error) {
+    console.error('❌ Error retrieving sessions:', error);
+    res.status(500).json({ 
+      error: "Failed to retrieve sessions",
+      details: error.message 
+    });
+  }
+});
+
+// 🔹 Existing Domo token endpoint
 app.get("/domo/token/:datasetId", async (req, res) => {
   try {
     const tokenResponse = await axios.post(
@@ -197,7 +365,6 @@ app.get("/domo/token/:cardId", async (req, res) => {
   try {
     console.log(`🔑 Generating embed token for card: ${cardId}`);
 
-    // 1️⃣ Get OAuth token using client credentials
     const tokenResponse = await axios.post(
       "https://api.domo.com/oauth/token",
       `grant_type=client_credentials&scope=data%20user%20dashboard`,
@@ -215,10 +382,6 @@ app.get("/domo/token/:cardId", async (req, res) => {
     const accessToken = tokenResponse.data.access_token;
     console.log("✅ Got OAuth token");
 
-    // 2️⃣ Domo doesn't have a separate embed token API
-    // For private embeds, we use the OAuth token directly as the access_token
-    // OR we need to use Domo's official embed SDK approach
-
     res.json({
       token: accessToken,
       expires_in: tokenResponse.data.expires_in,
@@ -232,7 +395,6 @@ app.get("/domo/token/:cardId", async (req, res) => {
       err.response?.data || err.message
     );
 
-    // Handle specific Domo API errors
     if (err.response?.data?.error === "invalid_client") {
       return res.status(400).json({
         message: "Invalid Domo Client ID or Secret",
@@ -253,7 +415,6 @@ app.get("/domo/embed-token/:cardId", async (req, res) => {
   const { cardId } = req.params;
 
   try {
-    // Get OAuth token
     const tokenResponse = await axios.post(
       "https://api.domo.com/oauth/token",
       `grant_type=client_credentials&scope=data%20user%20dashboard`,
@@ -269,9 +430,6 @@ app.get("/domo/embed-token/:cardId", async (req, res) => {
     );
 
     const accessToken = tokenResponse.data.access_token;
-
-    // For Domo, the OAuth token can often be used directly for embeds
-    // But the proper way is to use it with specific embed parameters
 
     res.json({
       success: true,
@@ -293,5 +451,16 @@ app.get("/", (req, res) => res.send("✅ Domo Node App is running"));
 /** 🔹 Start Server */
 app.listen(PORT, async () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(`📝 User session endpoints available at /api/user-session`);
   await getDomoAccessToken();
 });
+
+app.use(
+  express.static("dist", {
+    setHeaders: (res, path) => {
+      if (path.endsWith(".js")) {
+        res.setHeader("Content-Type", "application/javascript");
+      }
+    },
+  })
+);
